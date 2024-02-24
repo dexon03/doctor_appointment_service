@@ -1,0 +1,171 @@
+# # version: "3.8"
+
+# # services:
+# #   mongo1:
+# #     image: mongo:7.0
+# #     command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+# #     ports:
+# #       - 27017:27017
+# #     extra_hosts:
+# #       - "host.docker.internal:host-gateway"
+# #     healthcheck:
+# #       test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017',priority:1},{_id:1,host:'host.docker.internal:27018',priority:0.5},{_id:2,host:'host.docker.internal:27019',priority:0.5}]}) }" | mongosh --port 27017 --quiet
+# #       interval: 5s
+# #       timeout: 30s
+# #       start_period: 0s
+# #       start_interval: 1s
+# #       retries: 30
+# #     volumes:
+# #       - "./volumes/mongo1_data:/data/db"
+# #       - "./volumes/mongo1_config:/data/configdb"
+
+# #   mongo2:
+# #     image: mongo:7.0
+# #     command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27018"]
+# #     ports:
+# #       - 27018:27018
+# #     extra_hosts:
+# #       - "host.docker.internal:host-gateway"
+# #     volumes:
+# #       - "./volumes/mongo2_data:/data/db"
+# #       - "./volumes/mongo2_config:/data/configdb"
+
+# #   mongo3:
+# #     image: mongo:7.0
+# #     command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27019"]
+# #     ports:
+# #       - 27019:27019
+# #     extra_hosts:
+# #       - "host.docker.internal:host-gateway"
+# #     volumes:
+# #       - "./volumes/mongo3_data:/data/db"
+# #       - "./volumes/mongo3_config:/data/configdb"
+
+# # volumes:
+# #   mongo1_data:
+# #   mongo2_data:
+# #   mongo3_data:
+# #   mongo1_config:
+# #   mongo2_config:
+# #   mongo3_config:
+# version: '3.8'
+
+# services:
+#   mongo1:
+#     hostname: mongo1
+#     image: mongo
+#     expose:
+#       - 27017
+#     ports:
+#       - 30001:27017 
+#     restart: always
+#     # command: mongod --replSet my-mongo-set
+#   mongo2:
+#     hostname: mongo2
+#     image: mongo
+#     expose:
+#       - 27017
+#     ports:
+#       - 30002:27017
+#     restart: always
+#     # command: mongod --replSet my-mongo-set
+#   mongo3:
+#     hostname: mongo3
+#     image: mongo
+#     expose:
+#       - 27017
+#     ports:
+#       - 30003:27017
+#     restart: always
+#     # command: mongod --replSet my-mongo-set
+
+#   # mongoinit:
+#   #   image: mongo
+#   #   restart: "no"
+#   #   depends_on:
+#   #     - mongo1
+#   #     - mongo2
+#   #     - mongo3
+#   #   command: >
+#   #     mongo --host mongo1:27017 --eval 
+#   #     '
+#   #     db = (new Mongo("localhost:27017")).getDB("test");
+#   #     config = {
+#   #     "_id" : "my-mongo-set",
+#   #     "members" : [
+#   #       {
+#   #         "_id" : 0,
+#   #         "host" : "mongo1:27017"
+#   #       },
+#   #       {
+#   #         "_id" : 1,
+#   #         "host" : "mongo2:27017"
+#   #       },
+#   #       {
+#   #         "_id" : 2,
+#   #         "host" : "mongo3:27017"
+#   #       }
+#   #     ]
+#   #     };
+#   #     rs.initiate(config);
+#   #     '
+services:
+  app:
+    build: ./src
+    ports:
+      - '5000:5000'
+    depends_on:
+      - mongo
+      - mongo-setup
+    environment:
+      DATABASE_URL: mongodb://server:password@mongo:27017/appointment_db?authSource=admin&directConnection=true
+      PORT: 5000
+    volumes:
+      - ./src/reminders.log:/usr/src/app/reminders.log
+
+  mongo:
+    image: mongo:5
+    container_name: mongo 
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: server
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: appointment_db
+    entrypoint:
+      - bash
+      - -c
+      - |
+          cp /keyfile /mongo_keyfile
+          chmod 400 /mongo_keyfile
+          chown 999:999 /mongo_keyfile
+          exec docker-entrypoint.sh $$@
+    command: "mongod --bind_ip_all --replSet rs0 --keyFile /mongo_keyfile"
+    volumes:
+      - ./keyfile:/keyfile
+      - ./volumes/mongo1_data:/data/db
+  
+  mongo-express:
+    image: mongo-express
+    container_name: mongo_express
+    restart: always
+    depends_on:
+      - mongo
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_ADMINUSERNAME: server
+      ME_CONFIG_MONGODB_ADMINPASSWORD: password
+
+  mongo-setup:
+    image: mongo:5
+    container_name: mongo_setup
+    depends_on:
+      - mongo
+    restart: on-failure
+    entrypoint: ["/bin/bash", "/setup_mongo.sh"]
+    volumes:
+      - ./setup_mongo.sh:/setup_mongo.sh
+
